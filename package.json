@@ -1,0 +1,42 @@
+{
+  "name": "kaoshi",
+  "version": "2.0.0",
+  "description": "在线考试系统 - 生产级 Node.js 实现",
+  "main": "src/app.js",
+  "scripts": {
+    "dev": "node --watch src/app.js",
+    "start": "node src/app.js",
+    "start:cluster": "node src/cluster.js",
+    "db:migrate": "knex migrate:latest",
+    "db:rollback": "knex migrate:rollback",
+    "db:seed": "knex seed:run",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.js",
+    "loadtest": "k6 run scripts/loadtest.js",
+    "lint": "eslint src/",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "fastify": "^5.3.0",
+    "@fastify/websocket": "^11.0.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/static": "^8.0.0",
+    "@fastify/helmet": "^12.0.0",
+    "ioredis": "^5.4.0",
+    "knex": "^3.1.0",
+    "pg": "^8.12.0",
+    "jsonwebtoken": "^9.0.0",
+    "uuid": "^11.0.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "bullmq": "^5.8.0",
+    "@fastify/rate-limit": "^10.2.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "supertest": "^7.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0"
+  }
+}

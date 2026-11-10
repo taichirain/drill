@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>在线考试</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; }
+    .header { background: white; padding: 16px 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { font-size: 18px; color: #333; }
+    .header .user-info { display: flex; align-items: center; gap: 12px; }
+    .header .user-info span { color: #666; }
+    .header .logout { color: #ff4d4f; cursor: pointer; border: none; background: none; font-size: 14px; }
+    .container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+
+    /* 考试列表 */
+    .exam-list { display: grid; gap: 16px; }
+    .exam-card { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+    .exam-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+    .exam-card h3 { font-size: 18px; color: #333; margin-bottom: 8px; }
+    .exam-card .meta { color: #888; font-size: 14px; display: flex; gap: 16px; }
+    .exam-card .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .exam-card .status.published { background: #e6f7ff; color: #1890ff; }
+    .exam-card .status.ongoing { background: #fff7e6; color: #fa8c16; }
+
+    /* 考试界面 */
+    .exam-view { display: none; }
+    .exam-header { background: white; border-radius: 8px; padding: 20px 24px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; justify-content: space-between; align-items: center; }
+    .exam-header .timer { font-size: 24px; font-weight: bold; color: #ff4d4f; font-variant-numeric: tabular-nums; }
+    .question-card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .question-card .q-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .question-card .q-number { font-weight: bold; color: #4A90D9; }
+    .question-card .q-score { color: #888; font-size: 14px; }
+    .question-card .q-type { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #f0f0f0; color: #666; margin-left: 8px; }
+    .question-card .q-content { font-size: 16px; color: #333; margin-bottom: 16px; line-height: 1.6; }
+    .option { display: block; padding: 10px 16px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+    .option:hover { border-color: #4A90D9; background: #f0f7ff; }
+    .option.selected { border-color: #4A90D9; background: #e6f0ff; color: #4A90D9; }
+    .fill-input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 15px; outline: none; }
+    .fill-input:focus { border-color: #4A90D9; }
+    .essay-input { width: 100%; min-height: 120px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 15px; outline: none; resize: vertical; }
+
+    .btn { padding: 10px 24px; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; transition: background 0.2s; }
+    .btn-primary { background: #4A90D9; color: white; }
+    .btn-primary:hover { background: #357ABD; }
+    .btn-danger { background: #ff4d4f; color: white; }
+    .btn-danger:hover { background: #d9363e; }
+    .actions { text-align: center; margin: 24px 0; display: flex; gap: 12px; justify-content: center; }
+
+    /* 结果页 */
+    .result-view { display: none; text-align: center; }
+    .result-view .score-display { font-size: 64px; font-weight: bold; color: #52c41a; margin: 40px 0 16px; }
+    .result-view .score-label { color: #888; font-size: 18px; }
+    .empty { text-align: center; color: #aaa; padding: 60px 0; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📝 在线考试系统</h1>
+    <div class="user-info">
+      <span id="user-name"></span>
+      <button class="logout" onclick="logout()">退出</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- 考试列表 -->
+    <div id="exam-list-view">
+      <h2 style="margin-bottom:16px; color:#333;">可参加的考试</h2>
+      <div class="exam-list" id="exam-list"></div>
+    </div>
+
+    <!-- 考试界面 -->
+    <div id="exam-view" class="exam-view">
+      <div class="exam-header">
+        <div>
+          <h2 id="exam-title"></h2>
+        </div>
+        <div class="timer" id="timer">00:00:00</div>
+      </div>
+      <div id="questions-container"></div>
+      <div class="actions">
+        <button class="btn btn-primary" onclick="backToList()">返回列表</button>
+        <button class="btn btn-danger" onclick="submitExam()">交 卷</button>
+      </div>
+    </div>
+
+    <!-- 结果页 -->
+    <div id="result-view" class="result-view">
+      <h2>考试结束</h2>
+      <div class="score-display" id="final-score">0</div>
+      <div class="score-label">分</div>
+      <div class="actions" style="margin-top:40px;">
+        <button class="btn btn-primary" onclick="backToList()">返回列表</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('token');
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    let currentExamId = null;
+    let timerInterval = null;
+    let examStartTime = null;
+    let examDuration = 0;
+
+    if (!token || !user) {
+      location.href = '/';
+    }
+
+    document.getElementById('user-name').textContent = `👤 ${user?.name || '用户'}`;
+
+    // API 请求封装
+    async function api(url, options = {}) {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          ...options.headers,
+        },
+      });
+      if (res.status === 401) {
+        localStorage.clear();
+        location.href = '/';
+        return;
+      }
+      return res.json();
+    }
+
+    // 加载考试列表
+    async function loadExams() {
+      const data = await api('/api/exams');
+      const list = document.getElementById('exam-list');
+
+      if (!data.exams || data.exams.length === 0) {
+        list.innerHTML = '<div class="empty">暂无可参加的考试</div>';
+        return;
+      }
+
+      list.innerHTML = data.exams.map(exam => `
+        <div class="exam-card" onclick="enterExam(${exam.id})">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>${exam.title}</h3>
+            <span class="status ${exam.status}">${exam.status === 'published' ? '待开始' : '进行中'}</span>
+          </div>
+          <p style="color:#666;margin:8px 0;">${exam.description || '暂无描述'}</p>
+          <div class="meta">
+            <span>⏱ ${exam.duration} 分钟</span>
+            <span>👨‍🏫 ${exam.creator_name || '未知'}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 进入考试
+    async function enterExam(examId) {
+      currentExamId = examId;
+      const data = await api(`/api/exams/${examId}/questions`);
+
+      document.getElementById('exam-title').textContent = data.exam.title;
+      examDuration = data.exam.duration;
+
+      // 渲染题目
+      const container = document.getElementById('questions-container');
+      const typeNames = { choice: '单选题', multi_choice: '多选题', judge: '判断题', fill: '填空题', essay: '简答题' };
+
+      container.innerHTML = data.questions.map((q, idx) => {
+        let inputHtml = '';
+        const savedAnswer = data.answers[q.id] || '';
+
+        if (q.type === 'choice' || q.type === 'judge' || q.type === 'multi_choice') {
+          inputHtml = (q.options || []).map(opt => {
+            const optValue = opt.charAt(0);
+            const isSelected = savedAnswer === optValue;
+            return `<div class="option ${isSelected ? 'selected' : ''}" data-q="${q.id}" data-v="${optValue}" onclick="selectOption(this, ${q.id}, '${optValue}')">${opt}</div>`;
+          }).join('');
+        } else if (q.type === 'fill') {
+          inputHtml = `<input class="fill-input" data-q="${q.id}" placeholder="请输入答案" value="${savedAnswer}" onchange="saveAnswer(${q.id}, this.value)">`;
+        } else {
+          inputHtml = `<textarea class="essay-input" data-q="${q.id}" placeholder="请输入答案" onchange="saveAnswer(${q.id}, this.value)">${savedAnswer}</textarea>`;
+        }
+
+        return `
+          <div class="question-card">
+            <div class="q-header">
+              <div>
+                <span class="q-number">第 ${idx + 1} 题</span>
+                <span class="q-type">${typeNames[q.type] || q.type}</span>
+              </div>
+              <span class="q-score">${q.score} 分</span>
+            </div>
+            <div class="q-content">${q.content}</div>
+            ${inputHtml}
+          </div>
+        `;
+      }).join('');
+
+      // 切换视图
+      document.getElementById('exam-list-view').style.display = 'none';
+      document.getElementById('exam-view').style.display = '';
+      document.getElementById('result-view').style.display = 'none';
+
+      // 启动计时器
+      startTimer();
+    }
+
+    // 选择选项
+    function selectOption(el, questionId, value) {
+      // 清除同题其他选中
+      document.querySelectorAll(`.option[data-q="${questionId}"]`).forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+      saveAnswer(questionId, value);
+    }
+
+    // 保存答案（自动保存）
+    async function saveAnswer(questionId, answer) {
+      await api(`/api/exams/${currentExamId}/answer`, {
+        method: 'POST',
+        body: JSON.stringify({ questionId, answer }),
+      });
+    }
+
+    // 计时器
+    function startTimer() {
+      examStartTime = Date.now();
+      if (timerInterval) clearInterval(timerInterval);
+
+      timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - examStartTime) / 1000);
+        const remaining = Math.max(0, examDuration * 60 - elapsed);
+
+        const h = String(Math.floor(remaining / 3600)).padStart(2, '0');
+        const m = String(Math.floor((remaining % 3600) / 60)).padStart(2, '0');
+        const s = String(remaining % 60).padStart(2, '0');
+
+        const timerEl = document.getElementById('timer');
+        timerEl.textContent = `${h}:${m}:${s}`;
+
+        // 最后 5 分钟变红闪烁
+        if (remaining <= 300) {
+          timerEl.style.animation = 'none';
+          timerEl.offsetHeight;
+          timerEl.style.color = '#ff4d4f';
+        }
+
+        // 时间到自动交卷
+        if (remaining <= 0) {
+          clearInterval(timerInterval);
+          submitExam();
+        }
+      }, 1000);
+    }
+
+    // 交卷
+    async function submitExam() {
+      if (!confirm('确定要交卷吗？提交后不可修改。')) return;
+
+      if (timerInterval) clearInterval(timerInterval);
+
+      const data = await api(`/api/exams/${currentExamId}/submit`, {
+        method: 'POST',
+      });
+
+      if (data.success) {
+        document.getElementById('final-score').textContent = data.score;
+        document.getElementById('exam-list-view').style.display = 'none';
+        document.getElementById('exam-view').style.display = 'none';
+        document.getElementById('result-view').style.display = '';
+      } else {
+        alert(data.error || '交卷失败');
+      }
+    }
+
+    // 返回列表
+    function backToList() {
+      if (timerInterval) clearInterval(timerInterval);
+      currentExamId = null;
+      document.getElementById('exam-list-view').style.display = '';
+      document.getElementById('exam-view').style.display = 'none';
+      document.getElementById('result-view').style.display = 'none';
+      loadExams();
+    }
+
+    // 退出
+    function logout() {
+      localStorage.clear();
+      location.href = '/';
+    }
+
+    // 初始化
+    loadExams();
+  </script>
+</body>
+</html>

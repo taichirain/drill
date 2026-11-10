@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>在线考试系统 - 登录</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .container { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 40px; width: 400px; text-align: center; }
+    h1 { font-size: 24px; color: #333; margin-bottom: 8px; }
+    .subtitle { color: #888; margin-bottom: 30px; }
+    .tabs { display: flex; border-bottom: 2px solid #eee; margin-bottom: 24px; }
+    .tab { flex: 1; padding: 10px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+    .tab.active { color: #4A90D9; border-bottom-color: #4A90D9; }
+    #qr-section canvas { margin: 20px auto; }
+    .qr-status { color: #666; margin-top: 12px; }
+    .qr-status.scanned { color: #52c41a; }
+    .qr-status.expired { color: #ff4d4f; }
+    .form-group { margin-bottom: 16px; text-align: left; }
+    .form-group label { display: block; color: #555; margin-bottom: 6px; font-size: 14px; }
+    .form-group input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 15px; outline: none; transition: border 0.2s; }
+    .form-group input:focus { border-color: #4A90D9; }
+    .btn { width: 100%; padding: 12px; background: #4A90D9; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: background 0.2s; }
+    .btn:hover { background: #357ABD; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    .error { color: #ff4d4f; font-size: 14px; margin-top: 8px; }
+    .refresh-btn { color: #4A90D9; cursor: pointer; border: none; background: none; margin-top: 10px; font-size: 14px; }
+    .refresh-btn:hover { text-decoration: underline; }
+    #qr-container { min-height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📝 在线考试系统</h1>
+    <p class="subtitle">扫码登录 或 账号密码登录</p>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('qr')">扫码登录</div>
+      <div class="tab" onclick="switchTab('password')">账号登录</div>
+    </div>
+
+    <!-- 扫码登录 -->
+    <div id="qr-section">
+      <div id="qr-container">
+        <canvas id="qr-canvas"></canvas>
+        <p class="qr-status" id="qr-status">正在加载二维码...</p>
+      </div>
+      <button class="refresh-btn" onclick="generateQR()">🔄 刷新二维码</button>
+    </div>
+
+    <!-- 账号密码登录 -->
+    <div id="password-section" style="display:none;">
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>用户名</label>
+          <input type="text" id="username" placeholder="请输入用户名" required>
+        </div>
+        <div class="form-group">
+          <label>密码</label>
+          <input type="password" id="password" placeholder="请输入密码" required>
+        </div>
+        <p class="error" id="login-error"></p>
+        <button type="submit" class="btn">登 录</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let currentToken = null;
+
+    function switchTab(type) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      if (type === 'qr') {
+        document.querySelectorAll('.tab')[0].classList.add('active');
+        document.getElementById('qr-section').style.display = '';
+        document.getElementById('password-section').style.display = 'none';
+        generateQR();
+      } else {
+        document.querySelectorAll('.tab')[1].classList.add('active');
+        document.getElementById('qr-section').style.display = 'none';
+        document.getElementById('password-section').style.display = '';
+        if (ws) ws.close();
+      }
+    }
+
+    async function generateQR() {
+      const statusEl = document.getElementById('qr-status');
+      statusEl.textContent = '正在生成二维码...';
+      statusEl.className = 'qr-status';
+
+      try {
+        const res = await fetch('/api/auth/qr/generate');
+        const data = await res.json();
+        currentToken = data.token;
+
+        // 前端渲染二维码（关键：不消耗服务端资源）
+        const canvas = document.getElementById('qr-canvas');
+        await QRCode.toCanvas(canvas, `${location.origin}/api/auth/qr/scan?token=${currentToken}`, {
+          width: 200,
+          margin: 2,
+          color: { dark: '#333', light: '#fff' },
+        });
+
+        statusEl.textContent = '请使用手机扫描二维码';
+
+        // 建立 WebSocket 连接
+        connectWebSocket(currentToken);
+      } catch (err) {
+        statusEl.textContent = '二维码生成失败，请刷新重试';
+        statusEl.className = 'qr-status expired';
+      }
+    }
+
+    function connectWebSocket(token) {
+      if (ws) ws.close();
+
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${location.host}/api/auth/qr/ws/${token}`);
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const statusEl = document.getElementById('qr-status');
+
+        switch (data.status) {
+          case 'scanned':
+            statusEl.textContent = `✅ ${data.userName || '用户'} 已扫码，等待确认...`;
+            statusEl.className = 'qr-status scanned';
+            break;
+          case 'confirmed':
+            statusEl.textContent = '🎉 登录成功，正在跳转...';
+            statusEl.className = 'qr-status scanned';
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            setTimeout(() => { location.href = '/exam.html'; }, 500);
+            break;
+          case 'expired':
+            statusEl.textContent = '⏰ 二维码已过期，请刷新';
+            statusEl.className = 'qr-status expired';
+            break;
+        }
+      };
+
+      ws.onerror = () => {
+        // 降级为轮询
+        startPolling(token);
+      };
+    }
+
+    function startPolling(token) {
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/auth/qr/status/${token}`);
+          const data = await res.json();
+          const statusEl = document.getElementById('qr-status');
+
+          if (data.status === 'confirmed') {
+            clearInterval(interval);
+            statusEl.textContent = '🎉 登录成功，正在跳转...';
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            setTimeout(() => { location.href = '/exam.html'; }, 500);
+          } else if (data.status === 'scanned') {
+            statusEl.textContent = '✅ 已扫码，等待确认...';
+            statusEl.className = 'qr-status scanned';
+          } else if (data.status === 'expired') {
+            clearInterval(interval);
+            statusEl.textContent = '⏰ 二维码已过期，请刷新';
+            statusEl.className = 'qr-status expired';
+          }
+        } catch (err) {}
+      }, 2000);
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const errorEl = document.getElementById('login-error');
+      errorEl.textContent = '';
+
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          errorEl.textContent = data.error || '登录失败';
+          return;
+        }
+
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        location.href = '/exam.html';
+      } catch (err) {
+        errorEl.textContent = '网络错误，请重试';
+      }
+    }
+
+    // 初始化
+    generateQR();
+  </script>
+</body>
+</html>

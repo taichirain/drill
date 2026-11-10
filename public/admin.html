@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>考试管理</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; }
+    .header { background: white; padding: 16px 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { font-size: 18px; color: #333; }
+    .container { max-width: 1000px; margin: 24px auto; padding: 0 16px; }
+    .card { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 16px; }
+    .card h3 { margin-bottom: 16px; color: #333; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+    th { color: #888; font-weight: 500; font-size: 14px; }
+    td { color: #333; }
+    .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
+    .btn-primary { background: #4A90D9; color: white; }
+    .btn-success { background: #52c41a; color: white; }
+    .btn-warning { background: #faad14; color: white; }
+    .btn-danger { background: #ff4d4f; color: white; }
+    .form-row { display: flex; gap: 12px; margin-bottom: 12px; }
+    .form-row input, .form-row select { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .status-draft { background: #f0f0f0; color: #888; }
+    .status-published { background: #e6f7ff; color: #1890ff; }
+    .status-ongoing { background: #fff7e6; color: #fa8c16; }
+    .status-finished { background: #f6ffed; color: #52c41a; }
+    .tabs { display: flex; gap: 0; margin-bottom: 24px; }
+    .tab { padding: 10px 20px; cursor: pointer; background: white; border: 1px solid #ddd; color: #666; }
+    .tab:first-child { border-radius: 6px 0 0 6px; }
+    .tab:last-child { border-radius: 0 6px 6px 0; }
+    .tab.active { background: #4A90D9; color: white; border-color: #4A90D9; }
+    .nav-links { display: flex; gap: 12px; align-items: center; }
+    .nav-links a { color: #4A90D9; text-decoration: none; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>⚙️ 考试管理后台</h1>
+    <div class="nav-links">
+      <a href="/exam.html">考试页面</a>
+      <span id="admin-name" style="color:#666;"></span>
+      <button class="btn btn-sm btn-danger" onclick="logout()">退出</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('exams')">考试管理</div>
+      <div class="tab" onclick="switchTab('results')">成绩查看</div>
+    </div>
+
+    <!-- 考试管理 -->
+    <div id="tab-exams">
+      <div class="card">
+        <h3>创建考试</h3>
+        <form id="create-exam-form" onsubmit="createExam(event)">
+          <div class="form-row">
+            <input type="text" id="exam-title" placeholder="考试标题" required>
+            <input type="number" id="exam-duration" placeholder="时长(分钟)" required min="1" value="60">
+          </div>
+          <div class="form-row">
+            <input type="text" id="exam-desc" placeholder="考试描述（可选）">
+            <button type="submit" class="btn btn-primary">创建考试</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>考试列表</h3>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>标题</th><th>时长</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody id="exams-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 成绩查看 -->
+    <div id="tab-results" style="display:none;">
+      <div class="card">
+        <h3>选择考试查看成绩</h3>
+        <div class="form-row">
+          <select id="result-exam-select" onchange="loadResults()">
+            <option value="">-- 请选择考试 --</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr><th>学生</th><th>用户名</th><th>得分</th><th>状态</th><th>提交时间</th></tr>
+          </thead>
+          <tbody id="results-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('token');
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+
+    if (!token || !user || !['teacher', 'admin'].includes(user.role)) {
+      alert('权限不足');
+      location.href = '/';
+    }
+
+    document.getElementById('admin-name').textContent = `👤 ${user?.name}`;
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          ...options.headers,
+        },
+      });
+      return res.json();
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-exams').style.display = tab === 'exams' ? '' : 'none';
+      document.getElementById('tab-results').style.display = tab === 'results' ? '' : 'none';
+      event.target.classList.add('active');
+      if (tab === 'results') loadExamOptions();
+    }
+
+    async function loadExams() {
+      const data = await api('/api/exams');
+      const tbody = document.getElementById('exams-table');
+      tbody.innerHTML = (data.exams || []).map(e => `
+        <tr>
+          <td>${e.id}</td>
+          <td>${e.title}</td>
+          <td>${e.duration} 分钟</td>
+          <td><span class="status-badge status-${e.status}">${e.status}</span></td>
+          <td>
+            ${e.status === 'draft' ? `<button class="btn btn-sm btn-success" onclick="updateStatus(${e.id}, 'published')">发布</button>` : ''}
+            ${e.status === 'published' ? `<button class="btn btn-sm btn-warning" onclick="updateStatus(${e.id}, 'ongoing')">开考</button>` : ''}
+            ${e.status === 'ongoing' ? `<button class="btn btn-sm btn-danger" onclick="updateStatus(${e.id}, 'finished')">结束</button>` : ''}
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" style="text-align:center;color:#aaa;">暂无考试</td></tr>';
+    }
+
+    async function createExam(e) {
+      e.preventDefault();
+      await api('/api/admin/exams', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: document.getElementById('exam-title').value,
+          duration: parseInt(document.getElementById('exam-duration').value),
+          description: document.getElementById('exam-desc').value || undefined,
+        }),
+      });
+      document.getElementById('create-exam-form').reset();
+      loadExams();
+    }
+
+    async function updateStatus(id, status) {
+      await api(`/api/admin/exams/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status }),
+      });
+      loadExams();
+    }
+
+    async function loadExamOptions() {
+      const data = await api('/api/exams');
+      const select = document.getElementById('result-exam-select');
+      select.innerHTML = '<option value="">-- 请选择考试 --</option>' +
+        (data.exams || []).map(e => `<option value="${e.id}">${e.title}</option>`).join('');
+    }
+
+    async function loadResults() {
+      const examId = document.getElementById('result-exam-select').value;
+      if (!examId) return;
+
+      const data = await api(`/api/admin/exams/${examId}/results`);
+      const tbody = document.getElementById('results-table');
+      tbody.innerHTML = (data.results || []).map(r => `
+        <tr>
+          <td>${r.student_name}</td>
+          <td>${r.username}</td>
+          <td><strong>${r.score ?? '-'}</strong></td>
+          <td>${r.status === 'submitted' ? '已交卷' : r.status === 'graded' ? '已批改' : '进行中'}</td>
+          <td>${r.submit_time || '-'}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" style="text-align:center;color:#aaa;">暂无成绩</td></tr>';
+    }
+
+    function logout() {
+      localStorage.clear();
+      location.href = '/';
+    }
+
+    loadExams();
+  </script>
+</body>
+</html>
